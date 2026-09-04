@@ -1,17 +1,14 @@
 # symmetrical-funicular
 
-ARM64 ImGui native overlay for Unity IL2CPP Android / Quest.
+Float Company / Quest Unity 6 holdable board menu.
 
-Set UNITY_VERSION in CMakeLists.txt and .github/workflows/build-arm64.yml to the game editor version (example 2021.3.33f1 / 2022.3.20f1). Mismatched Unity NDK / GLES backend is why a generic imgui.so dies on load or never draws.
+Unity: 6000.0.66f2 (b20bc5da3050)
+Backend: IL2CPP ARM64, metadata v31, OculusXRPlugin, Vulkan.
 
-## Build
-- GitHub Actions: Actions tab → build-arm64 → artifact `libimgui.so` under `lib/arm64-v8a/`
-- Local: Android NDK r23+ matching that Unity embed NDK
+Not a flat screen imgui overlay. Board parents to the off-hand like ii's stupid menu. Poke buttons with the other controller.
 
-```
-cmake -B build -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
-  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 -DUNITY_VERSION=2021.3.33f1
-cmake --build build
-```
+Grip on off-hand = spawn / hold the board.
+Trigger poke = click.
+Stick left/right = page.
 
-Drop `libimgui.so` next to the game libs or inject via your existing loader.
+Build: Actions → build-arm64. Artifact libholdmenu.so.
