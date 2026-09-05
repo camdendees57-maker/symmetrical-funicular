@@ -2,47 +2,49 @@
 #include <android/log.h>
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "TagtusSpawn", ##__VA_ARGS__)
 
-// Class/method names must match dump.cs. These are the usual AC-clone slots.
-// Swap after you dump Assembly-CSharp for Float Company.
-struct SpawnTarget {
-    const char* asmName;
-    const char* ns;
-    const char* clazz;
-    const char* method;
-    int argc;
-    const char* item;
-};
-
-static SpawnTarget kTargets[] = {
-    {"Assembly-CSharp", "", "ItemSpawner", "Spawn", 1, "flashlight"},
-    {"Assembly-CSharp", "", "ItemSpawner", "SpawnItem", 1, "flashlight"},
-    {"Assembly-CSharp", "", "SpawnManager", "Spawn", 1, "flashlight"},
-    {"Assembly-CSharp", "", "PlayerInventory", "AddItem", 1, "flashlight"},
-    {"Assembly-CSharp", "", "Inventory", "Give", 1, "flashlight"},
-};
+// From Float Company global-metadata.dat v31:
+//   Assets/Mod Menu/Scripts/ItemSpawn.cs  fields: spawnSpot
+//   LootSpawnFix.Spawn / Respawn / spawners
+//   Photon PUN Instantiation
+// Prefab names pulled from script types in the same metadata dump.
 
 static const char* kItems[] = {
-    "flashlight", "backpack", "shotgun", "grappler", "hoverboard", "rocket"
+    "Flashlight", "Backpack", "Shotgun", "Grappler", "Hoverboard", "Rocket",
+    "LootItem", "MineItem", "Weapon"
 };
 static int g_item = 0;
 
 void SpawnCycleItem() {
-    g_item = (g_item + 1) % 6;
-    LOGI("spawn item slot %s", kItems[g_item]);
+    g_item = (g_item + 1) % 9;
+    LOGI("item %s", kItems[g_item]);
 }
-
 const char* SpawnCurrentItem() { return kItems[g_item]; }
 
+static bool Try(const char* asmName, const char* ns, const char* clazz, const char* method, int argc, void* inst, void** args) {
+    void* r = Il2CppInvoke(asmName, ns, clazz, method, argc, inst, args);
+    if (r) { LOGI("hit %s.%s", clazz, method); return true; }
+    return false;
+}
+
 bool SpawnDo() {
-    if (!Il2CppReady()) { LOGI("il2cpp not ready"); return false; }
+    if (!Il2CppReady()) { LOGI("il2cpp cold"); return false; }
     const char* item = kItems[g_item];
-    void* s = Il2CppStr(item);
-    void* args[1] = { s };
-    for (auto& t : kTargets) {
-        args[0] = Il2CppStr(t.item[0] ? item : t.item);
-        void* r = Il2CppInvoke(t.asmName, t.ns, t.clazz, t.method, t.argc, nullptr, args);
-        if (r) { LOGI("spawn hit %s.%s(%s)", t.clazz, t.method, item); return true; }
-    }
-    LOGI("no spawn method hit — drop dump.cs class names");
+    void* name = Il2CppStr(item);
+    void* args1[1] = { name };
+
+    // built-in mod menu spawner first
+    if (Try("Assembly-CSharp", "", "ItemSpawn", "Spawn", 0, nullptr, nullptr)) return true;
+    if (Try("Assembly-CSharp", "", "ItemSpawn", "SpawnOne", 0, nullptr, nullptr)) return true;
+    if (Try("Assembly-CSharp", "", "ItemSpawn", "Spawn", 1, nullptr, args1)) return true;
+
+    if (Try("Assembly-CSharp", "", "LootSpawnFix", "Spawn", 0, nullptr, nullptr)) return true;
+    if (Try("Assembly-CSharp", "", "LootItem", "Spawn", 0, nullptr, nullptr)) return true;
+
+    // Photon PUN — 4-arg instantiate(string, Vector3, Quaternion, byte) needs valuetype packing;
+    // try the string-only overloads first if they exist.
+    if (Try("PhotonUnityNetworking", "Photon.Pun", "PhotonNetwork", "Instantiate", 1, nullptr, args1)) return true;
+    if (Try("Assembly-CSharp", "Photon.Pun", "PhotonNetwork", "Instantiate", 1, nullptr, args1)) return true;
+
+    LOGI("spawn miss item=%s — ItemSpawn exists, method name not 0/1-arg Spawn", item);
     return false;
 }
