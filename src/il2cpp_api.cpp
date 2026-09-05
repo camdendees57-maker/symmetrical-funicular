@@ -1,7 +1,8 @@
 #include "il2cpp_api.h"
+#include "Il2Cpp-Headers.hpp"
+#include "Il2CppMethodNames.hpp"
 #include <dlfcn.h>
 #include <android/log.h>
-#include <cstdint>
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "TagtusIL2", ##__VA_ARGS__)
 
 using FnDomainGet = Il2CppDomain*(*)();
@@ -21,6 +22,7 @@ using FnClassNs = const char*(*)(Il2CppClass*);
 using FnClassMethods = const MethodInfo*(*)(Il2CppClass*, void**);
 using FnMethodName = const char*(*)(const MethodInfo*);
 using FnMethodArgc = int(*)(const MethodInfo*);
+using FnForEach = void(*)(void(*)(Il2CppClass*,void*), void*);
 
 static FnDomainGet domain_get;
 static FnAsmOpen asm_open;
@@ -39,33 +41,40 @@ static FnClassNs class_ns;
 static FnClassMethods class_methods;
 static FnMethodName method_name;
 static FnMethodArgc method_argc;
+static FnForEach class_for_each;
 static bool g_ok=false;
 
 void Il2CppBind() {
     void* h = dlopen("libil2cpp.so", RTLD_NOW);
     if (!h) h = dlopen("libil2cpp.so", RTLD_LAZY);
     if (!h) return;
-#define B(fn,sym) fn = (decltype(fn))dlsym(h, sym)
-    B(domain_get, "il2cpp_domain_get");
-    B(asm_open, "il2cpp_domain_assembly_open");
-    B(asm_image, "il2cpp_assembly_get_image");
-    B(class_from_name, "il2cpp_class_from_name");
-    B(method_from_name, "il2cpp_class_get_method_from_name");
-    B(runtime_invoke, "il2cpp_runtime_invoke");
-    B(thread_attach, "il2cpp_thread_attach");
-    B(thread_current, "il2cpp_thread_current");
-    B(string_new, "il2cpp_string_new");
-    B(domain_asms, "il2cpp_domain_get_assemblies");
-    B(img_count, "il2cpp_image_get_class_count");
-    B(img_class, "il2cpp_image_get_class");
-    B(class_name, "il2cpp_class_get_name");
-    B(class_ns, "il2cpp_class_get_namespace");
-    B(class_methods, "il2cpp_class_get_methods");
-    B(method_name, "il2cpp_method_get_name");
-    B(method_argc, "il2cpp_method_get_param_count");
-#undef B
-    g_ok = domain_get && domain_asms && img_count && img_class && class_name && class_methods && runtime_invoke;
-    LOGI("il2cpp auto-scan bind=%d", (int)g_ok);
+#define BIND(fn, SYM) fn = (decltype(fn))dlsym(h, SYM)
+    BIND(domain_get,        symbol_il2cpp_domain_get);
+    BIND(asm_open,          symbol_il2cpp_domain_assembly_open);
+    BIND(asm_image,         symbol_il2cpp_assembly_get_image);
+    BIND(class_from_name,   symbol_il2cpp_class_from_name);
+    BIND(method_from_name,  symbol_il2cpp_class_get_method_from_name);
+    BIND(runtime_invoke,    symbol_il2cpp_runtime_invoke);
+    BIND(thread_attach,     symbol_il2cpp_thread_attach);
+    BIND(thread_current,    symbol_il2cpp_thread_current);
+    BIND(string_new,        symbol_il2cpp_string_new);
+    BIND(domain_asms,       symbol_il2cpp_domain_get_assemblies);
+    BIND(img_count,         symbol_il2cpp_image_get_class_count);
+    BIND(img_class,         symbol_il2cpp_image_get_class);
+    BIND(class_name,        symbol_il2cpp_class_get_name);
+    BIND(class_ns,          symbol_il2cpp_class_get_namespace);
+    BIND(class_methods,     symbol_il2cpp_class_get_methods);
+    BIND(method_name,       symbol_il2cpp_method_get_name);
+    BIND(method_argc,       symbol_il2cpp_method_get_param_count);
+    BIND(class_for_each,    symbol_il2cpp_class_for_each);
+    if (!domain_get)     BIND(domain_get, BNM_IL2CPP_API_il2cpp_domain_get);
+    if (!runtime_invoke) BIND(runtime_invoke, BNM_IL2CPP_API_il2cpp_runtime_invoke);
+    if (!string_new)     BIND(string_new, BNM_IL2CPP_API_il2cpp_string_new);
+    if (!asm_open)       BIND(asm_open, BNM_IL2CPP_API_il2cpp_domain_assembly_open);
+    if (!class_from_name)BIND(class_from_name, BNM_IL2CPP_API_il2cpp_class_from_name);
+#undef BIND
+    g_ok = domain_get && runtime_invoke && class_name && class_methods;
+    LOGI("symbol-header bind ok=%d", (int)g_ok);
 }
 bool Il2CppReady(){ return g_ok; }
 Il2CppString* Il2CppStr(const char* s){ return string_new ? string_new(s) : nullptr; }
@@ -95,9 +104,16 @@ void* Il2CppInvoke(const char* asmName, const char* ns, const char* clazz, const
     auto mi=method_from_name(k, method, argc); if(!mi) return nullptr;
     return Il2CppInvokeMi(mi, inst, args);
 }
+struct Wrap { ClassFn fn; void* user; };
+static void EachThunk(Il2CppClass* k, void* u){
+    auto* w=(Wrap*)u;
+    w->fn(k, Il2CppClassNs(k), Il2CppClassName(k), w->user);
+}
 void Il2CppForEachClass(ClassFn fn, void* user){
     if (!g_ok) return;
     Il2CppAttach();
+    if (class_for_each) { Wrap w{fn,user}; class_for_each(EachThunk, &w); return; }
+    if (!domain_asms || !img_count || !img_class) return;
     size_t n=0;
     auto asms=domain_asms(domain_get(), &n);
     if (!asms) return;
@@ -106,10 +122,7 @@ void Il2CppForEachClass(ClassFn fn, void* user){
         size_t cc=img_count(img);
         for (size_t c=0;c<cc;c++){
             auto k=img_class(img,c);
-            if (!k) continue;
-            const char* nm=class_name(k); if(!nm) continue;
-            const char* ns=class_ns?class_ns(k):"";
-            fn(k, ns?ns:"", nm, user);
+            if (k) fn(k, Il2CppClassNs(k), Il2CppClassName(k), user);
         }
     }
 }
@@ -117,8 +130,7 @@ void Il2CppForEachMethod(Il2CppClass* klass, MethodFn fn, void* user){
     if (!klass || !class_methods || !method_name) return;
     void* iter=nullptr;
     const MethodInfo* mi;
-    const char* cname=class_name?class_name(klass):"?";
-    while ((mi=class_methods(klass,&iter))) {
+    const char* cname=Il2CppClassName(klass);
+    while ((mi=class_methods(klass,&iter)))
         fn(klass, mi, cname, method_name(mi), method_argc?method_argc(mi):-1, user);
-    }
 }
