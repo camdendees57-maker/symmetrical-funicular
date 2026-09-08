@@ -8,6 +8,9 @@
 #include <cstdio>
 #include <cstring>
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "TagtusUI", ##__VA_ARGS__)
+#ifndef UNITY_VERSION_STR
+#define UNITY_VERSION_STR "6000.0.66f2"
+#endif
 
 #ifdef HAS_IMGUI
 #include "imgui.h"
@@ -65,6 +68,9 @@ void ImGuiPanel_Frame(const Pose& head, const Pose& left, const Pose& right, boo
     ImGui::SetNextWindowPos(ImVec2(0,0));
     ImGui::SetNextWindowSize(io.DisplaySize);
     ImGui::Begin("TAGTUSVR", nullptr, ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoCollapse);
+
+    ImGui::Text("AC Unity %s", UNITY_VERSION_STR);
+    ImGui::TextUnformatted("engine: Unity 6 / IL2CPP / OpenXR / Burst");
 
     if (ImGuiVR_GetFollowMode()==IMGUIVR_FOLLOW_LOOK) {
         if (ImGui::Button("SNAP TO LEFT HAND", ImVec2(-1, 28))) ImGuiVR_SetFollowMode(IMGUIVR_FOLLOW_LEFT_HAND);
