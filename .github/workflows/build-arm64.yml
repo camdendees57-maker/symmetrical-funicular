@@ -25,7 +25,7 @@ jobs:
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-29 \
             -DANDROID_STL=c++_shared \
-            -DUNITY_VERSION=6000.0.66f2 \
+            -DUNITY_VERSION=6000.3.12f1 \
             -DIMGUI_DIR=${GITHUB_WORKSPACE}/third_party/imgui
           cmake --build build -j$(nproc)
           find build -name "libholdmenu.so" -ls

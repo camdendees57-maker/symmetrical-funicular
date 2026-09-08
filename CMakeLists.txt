@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.18)
 project(holdmenu_unity6 C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(UNITY_VERSION "6000.0.66f2" CACHE STRING "Game Unity editor version")
+set(UNITY_VERSION "6000.3.12f1" CACHE STRING "Game Unity editor version")
 set(IMGUI_DIR "${CMAKE_SOURCE_DIR}/third_party/imgui" CACHE PATH "Dear ImGui")
 add_compile_definitions(UNITY_VERSION_STR="${UNITY_VERSION}")
 add_library(holdmenu SHARED
