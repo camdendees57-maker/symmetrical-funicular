@@ -1,3 +1,4 @@
+#include "spawn.h"
 #include "il2cpp_api.h"
 #include <android/log.h>
 #include <cstring>
@@ -10,6 +11,9 @@ static const char* kItems[] = {
 static int g_item=0;
 void SpawnCycleItem(){ g_item=(g_item+1)%9; LOGI("item %s", kItems[g_item]); }
 const char* SpawnCurrentItem(){ return kItems[g_item]; }
+int SpawnItemCount(){ return 9; }
+const char* SpawnItemName(int i){ return (i>=0&&i<9)?kItems[i]:""; }
+void SpawnSelect(int i){ if(i>=0&&i<9) g_item=i; }
 
 static bool Has(const char* s, const char* n){
     if(!s||!n) return false;
@@ -37,6 +41,11 @@ static Hit g_hits[64];
 static int g_nhit=0;
 static bool g_scanned=false;
 
+int SpawnHitCount(){ return g_nhit; }
+const char* SpawnHitClass(int i){ return (i>=0&&i<g_nhit)?g_hits[i].c:""; }
+const char* SpawnHitMethod(int i){ return (i>=0&&i<g_nhit)?g_hits[i].m:""; }
+int SpawnHitArgc(int i){ return (i>=0&&i<g_nhit)?g_hits[i].argc:-1; }
+
 static void OnMethod(Il2CppClass*, const MethodInfo* mi, const char* cname, const char* mname, int argc, void*){
     if (!MethodHot(mname)) return;
     if (g_nhit>=64) return;
@@ -60,6 +69,7 @@ static void Scan(){
     g_scanned=true;
     LOGI("scan done hits=%d", g_nhit);
 }
+void SpawnForceScan(){ g_scanned=false; Scan(); }
 
 bool SpawnDo(){
     Scan();
