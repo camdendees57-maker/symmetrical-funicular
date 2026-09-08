@@ -1,6 +1,3 @@
-Drop official Dear ImGui here:
-  imgui.h imgui.cpp imgui_draw.cpp imgui_tables.cpp imgui_widgets.cpp imgui_demo.cpp imgui_internal.h imconfig.h
-  backends/imgui_impl_opengl3.cpp backends/imgui_impl_opengl3.h backends/imgui_impl_opengl3_loader.h
-
-https://github.com/ocornut/imgui
-Do not mix docking branch vs master vs Unity UImGui fork unless that is the exact stack the game already uses.
+Pinned: Dear ImGui 1.92.8
+CI clones tag v1.92.8 into this folder.
+Local: unzip imgui-1.92.8.zip so imgui.h sits here.
