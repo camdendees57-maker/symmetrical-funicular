@@ -6,14 +6,23 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "TagtusSpawn", ##__VA_ARGS__)
 
 static const char* kItems[] = {
-    "Flashlight","Backpack","Shotgun","Grappler","Hoverboard","Rocket","LootItem","MineItem","Weapon"
+    "item_flashlight",
+    "item_backpack",
+    "item_shotgun",
+    "item_grappler",
+    "item_hoverboard",
+    "item_rocket",
+    "item_loot",
+    "item_mine",
+    "item_weapon"
 };
+static const int kItemN = 9;
 static int g_item=0;
-void SpawnCycleItem(){ g_item=(g_item+1)%9; LOGI("item %s", kItems[g_item]); }
+void SpawnCycleItem(){ g_item=(g_item+1)%kItemN; LOGI("item %s", kItems[g_item]); }
 const char* SpawnCurrentItem(){ return kItems[g_item]; }
-int SpawnItemCount(){ return 9; }
-const char* SpawnItemName(int i){ return (i>=0&&i<9)?kItems[i]:""; }
-void SpawnSelect(int i){ if(i>=0&&i<9) g_item=i; }
+int SpawnItemCount(){ return kItemN; }
+const char* SpawnItemName(int i){ return (i>=0&&i<kItemN)?kItems[i]:""; }
+void SpawnSelect(int i){ if(i>=0&&i<kItemN) g_item=i; }
 
 static bool Has(const char* s, const char* n){
     if(!s||!n) return false;
@@ -80,7 +89,7 @@ bool SpawnDo(){
     for(int i=0;i<g_nhit;i++){
         void** args = g_hits[i].argc==1 ? args1 : nullptr;
         void* r=Il2CppInvokeMi(g_hits[i].mi, nullptr, args);
-        if(r){ LOGI("fired %s.%s", g_hits[i].c, g_hits[i].m); ok++; }
+        if(r){ LOGI("fired %s.%s id=%s", g_hits[i].c, g_hits[i].m, kItems[g_item]); ok++; }
     }
     LOGI("spawn fire ok=%d / %d item=%s", ok, g_nhit, kItems[g_item]);
     return ok>0;
