@@ -4,6 +4,9 @@
 #include "il2cpp_api.h"
 #include "Il2CppMethodNames.hpp"
 #include <android/log.h>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "TagtusUI", ##__VA_ARGS__)
 
 #ifdef HAS_IMGUI
@@ -84,10 +87,8 @@ void ImGuiPanel_Frame(const Pose& head, const Pose& left, const Pose& right, boo
     ImGui::Text("SPAWN  now=%s  hits=%d", SpawnCurrentItem(), SpawnHitCount());
     if (ImGui::Button("SCAN METHODS", ImVec2(-1, 24))) SpawnForceScan();
     for (int i=0;i<SpawnItemCount();++i) {
-        char lab[64];
-        snprintf(lab, 64, "%s%s", i==0&&false?"":"", SpawnItemName(i));
-        if (ImGui::Selectable(SpawnItemName(i), i /*cmp*/ == 0 && false ? false : (SpawnCurrentItem()==SpawnItemName(i) || strcmp(SpawnCurrentItem(), SpawnItemName(i))==0)))
-            SpawnSelect(i);
+        bool sel = strcmp(SpawnCurrentItem(), SpawnItemName(i))==0;
+        if (ImGui::Selectable(SpawnItemName(i), sel)) SpawnSelect(i);
     }
     if (ImGui::Button("SPAWN ITEM", ImVec2(-1, 32))) {
         bool ok = SpawnDo();
@@ -102,7 +103,6 @@ void ImGuiPanel_Frame(const Pose& head, const Pose& left, const Pose& right, boo
 #else
     if (poke && !g_prevPoke) {
         if (!ImGuiVR_TryToggleFromPoke(board, right)) {
-            /* fallback poke strip: lower half = spawn */
             Vec3 origin = right.p;
             Vec3 dir = qrot(right.q, {0,0,-1});
             Vec3 n = qrot(board.q, {0,0,1});
