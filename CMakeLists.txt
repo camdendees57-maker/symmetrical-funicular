@@ -7,6 +7,7 @@ add_compile_definitions(UNITY_VERSION_STR="${UNITY_VERSION}")
 add_library(holdmenu SHARED
   src/main.cpp
   src/holdable_menu.cpp
+  src/imgui_vr.cpp
   src/xr_pose.cpp
   src/present_hook.cpp
   src/il2cpp_api.cpp
