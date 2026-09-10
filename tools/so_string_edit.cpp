@@ -3,6 +3,7 @@
 #include <commdlg.h>
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -41,7 +42,7 @@ static void status(const std::wstring& s) { SetWindowTextW(g_stat, s.c_str()); }
 static bool printable(uint8_t c) { return c >= 0x20 && c < 0x7f; }
 
 static bool load_file(const std::wstring& p) {
-    std::ifstream f(p, std::ios::binary);
+    std::ifstream f(p.c_str(), std::ios::binary);
     if (!f) return false;
     f.seekg(0, std::ios::end);
     auto n = (size_t)f.tellg();
@@ -52,7 +53,7 @@ static bool load_file(const std::wstring& p) {
     return true;
 }
 static bool save_file(const std::wstring& p) {
-    std::ofstream f(p, std::ios::binary);
+    std::ofstream f(p.c_str(), std::ios::binary);
     if (!f) return false;
     f.write((const char*)g_bin.data(), (std::streamsize)g_bin.size());
     return true;
