@@ -1,0 +1,26 @@
+name: build-exe
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "tools/so_string_edit.cpp"
+      - ".github/workflows/build-exe.yml"
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        shell: cmd
+        run: |
+          where g++ && g++ -O2 -static -std=c++17 -o so_string_edit.exe tools\so_string_edit.cpp
+          if not exist so_string_edit.exe (
+            call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+            cl /O2 /EHsc /Fe:so_string_edit.exe tools\so_string_edit.cpp
+          )
+          dir so_string_edit.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: so_string_edit-win64
+          path: so_string_edit.exe
