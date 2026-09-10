@@ -1,3 +1,0 @@
-Pinned: Dear ImGui 1.92.8
-CI clones tag v1.92.8 into this folder.
-Local: unzip imgui-1.92.8.zip so imgui.h sits here.
