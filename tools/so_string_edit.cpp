@@ -1,168 +1,258 @@
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <commdlg.h>
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <vector>
 
-static void die(const char* m) {
-    std::cerr << m << "\n";
-    std::exit(1);
-}
+enum {
+    ID_OPEN=10, ID_SAVE=11, ID_LIST=12, ID_FIND=13, ID_REPL=14, ID_ZERO=15, ID_XOR=16,
+    ID_OLD=20, ID_NEW=21, ID_BOX=22, ID_STAT=23
+};
 
-static std::vector<uint8_t> slurp(const std::string& p) {
+static std::vector<uint8_t> g_bin;
+static std::wstring g_path;
+static HWND g_box, g_old, g_new, g_stat;
+
+static std::string narrow(const std::wstring& w) {
+    if (w.empty()) return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+    std::string s(n, 0);
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
+    return s;
+}
+static std::wstring wide(const std::string& s) {
+    if (s.empty()) return {};
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+    std::wstring w(n, 0);
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
+    return w;
+}
+static std::wstring gettxt(HWND h) {
+    int n = GetWindowTextLengthW(h);
+    std::wstring w(n, 0);
+    if (n) GetWindowTextW(h, &w[0], n + 1);
+    return w;
+}
+static void status(const std::wstring& s) { SetWindowTextW(g_stat, s.c_str()); }
+static bool printable(uint8_t c) { return c >= 0x20 && c < 0x7f; }
+
+static bool load_file(const std::wstring& p) {
     std::ifstream f(p, std::ios::binary);
-    if (!f) die("open failed");
+    if (!f) return false;
     f.seekg(0, std::ios::end);
     auto n = (size_t)f.tellg();
-    f.seekg(0, std::ios::beg);
-    std::vector<uint8_t> b(n);
-    f.read((char*)b.data(), (std::streamsize)n);
-    return b;
+    f.seekg(0);
+    g_bin.resize(n);
+    f.read((char*)g_bin.data(), (std::streamsize)n);
+    g_path = p;
+    return true;
 }
-
-static void dump(const std::string& p, const std::vector<uint8_t>& b) {
+static bool save_file(const std::wstring& p) {
     std::ofstream f(p, std::ios::binary);
-    if (!f) die("write failed");
-    f.write((const char*)b.data(), (std::streamsize)b.size());
+    if (!f) return false;
+    f.write((const char*)g_bin.data(), (std::streamsize)g_bin.size());
+    return true;
 }
-
-static bool printable(uint8_t c) {
-    return c >= 0x20 && c < 0x7f;
+static std::wstring pick(bool save) {
+    wchar_t buf[MAX_PATH] = L"";
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.lpstrFilter = L"Shared objects (*.so)\0*.so\0All\0*.*\0";
+    ofn.lpstrFile = buf;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY;
+    if (save) return GetSaveFileNameW(&ofn) ? buf : L"";
+    ofn.Flags |= OFN_FILEMUSTEXIST;
+    return GetOpenFileNameW(&ofn) ? buf : L"";
 }
-
-static std::vector<size_t> find_bytes(const std::vector<uint8_t>& b, const std::vector<uint8_t>& n) {
-    std::vector<size_t> hits;
-    if (n.empty() || n.size() > b.size()) return hits;
-    for (size_t i = 0; i + n.size() <= b.size(); ++i) {
-        if (std::memcmp(b.data() + i, n.data(), n.size()) == 0) hits.push_back(i);
-    }
-    return hits;
-}
-
-static std::vector<uint8_t> to_utf16le(const std::string& s) {
-    std::vector<uint8_t> o;
-    o.reserve(s.size() * 2);
-    for (unsigned char c : s) {
-        o.push_back(c);
-        o.push_back(0);
-    }
+static std::vector<uint8_t> bytes_of(const std::string& s) { return {s.begin(), s.end()}; }
+static std::vector<uint8_t> utf16le(const std::string& s) {
+    std::vector<uint8_t> o; o.reserve(s.size()*2);
+    for (unsigned char c : s) { o.push_back(c); o.push_back(0); }
     return o;
 }
-
-static std::vector<uint8_t> bytes_of(const std::string& s) {
-    return std::vector<uint8_t>(s.begin(), s.end());
+static std::vector<size_t> find_bytes(const std::vector<uint8_t>& b, const std::vector<uint8_t>& n) {
+    std::vector<size_t> h;
+    if (n.empty() || n.size() > b.size()) return h;
+    for (size_t i = 0; i + n.size() <= b.size(); ++i)
+        if (!memcmp(b.data()+i, n.data(), n.size())) h.push_back(i);
+    return h;
 }
-
-static int patch_at(std::vector<uint8_t>& b, size_t off, const std::vector<uint8_t>& oldv, const std::vector<uint8_t>& nv, bool zero) {
-    if (off + oldv.size() > b.size()) return 0;
-    if (std::memcmp(b.data() + off, oldv.data(), oldv.size()) != 0) return 0;
-    if (zero) {
-        std::fill(b.begin() + off, b.begin() + off + oldv.size(), 0);
-        return 1;
-    }
-    if (nv.size() > oldv.size()) {
-        std::cerr << "skip 0x" << std::hex << off << std::dec << " new longer than slot\n";
-        return 0;
-    }
-    std::copy(nv.begin(), nv.end(), b.begin() + off);
-    std::fill(b.begin() + off + nv.size(), b.begin() + off + oldv.size(), 0);
+static int patch_at(size_t off, const std::vector<uint8_t>& oldv, const std::vector<uint8_t>& nv, bool z) {
+    if (off + oldv.size() > g_bin.size()) return 0;
+    if (memcmp(g_bin.data()+off, oldv.data(), oldv.size())) return 0;
+    if (z) { std::fill(g_bin.begin()+off, g_bin.begin()+off+oldv.size(), 0); return 1; }
+    if (nv.size() > oldv.size()) return 0;
+    std::copy(nv.begin(), nv.end(), g_bin.begin()+off);
+    std::fill(g_bin.begin()+off+nv.size(), g_bin.begin()+off+oldv.size(), 0);
     return 1;
 }
+static void addline(const std::wstring& s) {
+    SendMessageW(g_box, LB_ADDSTRING, 0, (LPARAM)s.c_str());
+}
+static void clearbox() { SendMessageW(g_box, LB_RESETCONTENT, 0, 0); }
 
-static void list_ascii(const std::vector<uint8_t>& b, int minlen) {
+static void do_list() {
+    clearbox();
+    if (g_bin.empty()) { status(L"open a .so first"); return; }
+    int n = 0;
     size_t i = 0;
-    while (i < b.size()) {
-        if (!printable(b[i])) { ++i; continue; }
+    while (i < g_bin.size()) {
+        if (!printable(g_bin[i])) { ++i; continue; }
         size_t j = i;
-        while (j < b.size() && printable(b[j])) ++j;
-        if ((int)(j - i) >= minlen) {
-            std::printf("0x%08zx  %.*s\n", i, (int)(j - i), (const char*)b.data() + i);
+        while (j < g_bin.size() && printable(g_bin[j])) ++j;
+        if (j - i >= 4) {
+            char line[560];
+            int sl = (int)std::min<size_t>(j - i, 480);
+            std::snprintf(line, sizeof(line), "0x%08zx  %.*s", i, sl, (const char*)g_bin.data() + i);
+            addline(wide(line));
+            ++n;
+            if (n > 8000) { addline(L"...truncated"); break; }
         }
         i = j + 1;
     }
+    wchar_t st[80];
+    wsprintfW(st, L"listed %d strings  %u bytes", n, (unsigned)g_bin.size());
+    status(st);
 }
-
-/* 1-byte XOR and repeating XOR key 1..8 if needle decrypts to printable match */
-static void xor_hunt(const std::vector<uint8_t>& b, const std::vector<uint8_t>& needle) {
-    if (needle.size() < 3) return;
-    std::printf("xor hunt needle_len=%zu\n", needle.size());
+static void do_find() {
+    clearbox();
+    auto t = narrow(gettxt(g_old));
+    if (t.empty() || g_bin.empty()) { status(L"need file + find text"); return; }
+    int n = 0;
+    for (auto o : find_bytes(g_bin, bytes_of(t))) {
+        char line[80]; std::snprintf(line, sizeof(line), "ascii 0x%08zx", o);
+        addline(wide(line)); ++n;
+    }
+    for (auto o : find_bytes(g_bin, utf16le(t))) {
+        char line[80]; std::snprintf(line, sizeof(line), "utf16 0x%08zx", o);
+        addline(wide(line)); ++n;
+    }
+    wchar_t st[64]; wsprintfW(st, L"hits %d", n); status(st);
+}
+static void do_patch(bool z) {
+    auto olds = narrow(gettxt(g_old));
+    auto news = narrow(gettxt(g_new));
+    if (g_bin.empty() || olds.empty()) { status(L"need file + old text"); return; }
+    if (!z && news.size() > olds.size()) { status(L"new longer than old slot"); return; }
+    int hits = 0;
+    auto ov = bytes_of(olds), nv = bytes_of(news);
+    for (auto o : find_bytes(g_bin, ov)) hits += patch_at(o, ov, nv, z);
+    auto ow = utf16le(olds), nw = utf16le(news);
+    for (auto o : find_bytes(g_bin, ow)) hits += patch_at(o, ow, nw, z);
+    wchar_t st[80]; wsprintfW(st, L"%s %d slot(s)  SAVE to write", z ? L"zeroed" : L"patched", hits);
+    status(st);
+}
+static void do_xor() {
+    clearbox();
+    auto t = narrow(gettxt(g_old));
+    auto needle = bytes_of(t);
+    if (g_bin.empty() || needle.size() < 3) { status(L"need file + find text (>=3)"); return; }
+    int shown = 0;
     for (int klen = 1; klen <= 8; ++klen) {
-        for (size_t i = 0; i + needle.size() <= b.size(); ++i) {
+        for (size_t i = 0; i + needle.size() <= g_bin.size(); ++i) {
             std::vector<uint8_t> key(klen);
             bool ok = true;
             for (size_t n = 0; n < needle.size(); ++n) {
-                uint8_t kn = b[i + n] ^ needle[n];
+                uint8_t kn = g_bin[i + n] ^ needle[n];
                 if (n < (size_t)klen) key[n] = kn;
                 else if (key[n % klen] != kn) { ok = false; break; }
             }
             if (!ok) continue;
-            /* score: nearby bytes xor to printable */
             int good = 0, tot = 0;
             size_t lo = i > 16 ? i - 16 : 0;
-            size_t hi = std::min(b.size(), i + needle.size() + 16);
+            size_t hi = std::min(g_bin.size(), i + needle.size() + 16);
             for (size_t p = lo; p < hi; ++p) {
-                uint8_t d = b[p] ^ key[(p - i + (size_t)klen * 8) % klen];
-                ++tot;
-                if (printable(d) || d == 0) ++good;
+                uint8_t d = g_bin[p] ^ key[(p - i + (size_t)klen * 8) % klen];
+                ++tot; if (printable(d) || d == 0) ++good;
             }
             if (good * 4 < tot * 3) continue;
-            std::printf("xor hit off=0x%08zx keylen=%d key=", i, klen);
-            for (int k = 0; k < klen; ++k) std::printf("%02x", key[k]);
-            std::printf("\n");
+            char line[96];
+            int w = std::snprintf(line, sizeof(line), "xor 0x%08zx keylen=%d key=", i, klen);
+            for (int k = 0; k < klen && w < 80; ++k) w += std::snprintf(line + w, sizeof(line) - w, "%02x", key[k]);
+            addline(wide(line));
+            if (++shown > 400) { addline(L"...truncated"); status(L"xor hits truncated"); return; }
         }
     }
+    wchar_t st[64]; wsprintfW(st, L"xor hits %d (repeat XOR only)", shown); status(st);
 }
 
-static void usage() {
-    std::cerr <<
-        "so_string_edit.exe  list    <in.so> [minlen]\n"
-        "so_string_edit.exe  find    <in.so> <text>\n"
-        "so_string_edit.exe  replace <in.so> <out.so> <old> <new>\n"
-        "so_string_edit.exe  zero    <in.so> <out.so> <text>\n"
-        "so_string_edit.exe  xorfind <in.so> <text>\n"
-        "notes: replace/zero also hit UTF-16LE. new must fit old slot.\n"
-        "xorfind only brute 1-8 byte repeating XOR. not AES/RSA.\n";
+static LRESULT CALLBACK Wnd(HWND h, UINT m, WPARAM w, LPARAM l) {
+    switch (m) {
+    case WM_CREATE: {
+        CreateWindowW(L"BUTTON", L"OPEN .SO", WS_CHILD|WS_VISIBLE, 12,12,110,28, h, (HMENU)ID_OPEN, nullptr, nullptr);
+        CreateWindowW(L"BUTTON", L"LIST", WS_CHILD|WS_VISIBLE, 128,12,80,28, h, (HMENU)ID_LIST, nullptr, nullptr);
+        CreateWindowW(L"BUTTON", L"FIND", WS_CHILD|WS_VISIBLE, 214,12,80,28, h, (HMENU)ID_FIND, nullptr, nullptr);
+        CreateWindowW(L"BUTTON", L"REPLACE", WS_CHILD|WS_VISIBLE, 300,12,90,28, h, (HMENU)ID_REPL, nullptr, nullptr);
+        CreateWindowW(L"BUTTON", L"ZERO", WS_CHILD|WS_VISIBLE, 396,12,80,28, h, (HMENU)ID_ZERO, nullptr, nullptr);
+        CreateWindowW(L"BUTTON", L"XORFIND", WS_CHILD|WS_VISIBLE, 482,12,90,28, h, (HMENU)ID_XOR, nullptr, nullptr);
+        CreateWindowW(L"BUTTON", L"SAVE AS", WS_CHILD|WS_VISIBLE, 578,12,90,28, h, (HMENU)ID_SAVE, nullptr, nullptr);
+        CreateWindowW(L"STATIC", L"find/old", WS_CHILD|WS_VISIBLE, 12,50,70,20, h, 0, nullptr, nullptr);
+        g_old = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL, 86,46,280,24, h, (HMENU)ID_OLD, nullptr, nullptr);
+        CreateWindowW(L"STATIC", L"new", WS_CHILD|WS_VISIBLE, 376,50,40,20, h, 0, nullptr, nullptr);
+        g_new = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"", WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL, 416,46,252,24, h, (HMENU)ID_NEW, nullptr, nullptr);
+        g_box = CreateWindowExW(WS_EX_CLIENTEDGE, L"LISTBOX", L"", WS_CHILD|WS_VISIBLE|WS_VSCROLL|LBS_NOTIFY, 12,80,656,360, h, (HMENU)ID_BOX, nullptr, nullptr);
+        g_stat = CreateWindowW(L"STATIC", L"open a .so", WS_CHILD|WS_VISIBLE, 12,450,656,22, h, (HMENU)ID_STAT, nullptr, nullptr);
+        return 0;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(w)) {
+        case ID_OPEN: {
+            auto p = pick(false);
+            if (p.empty()) break;
+            if (!load_file(p)) { status(L"open failed"); break; }
+            status(L"loaded " + p);
+            do_list();
+            break;
+        }
+        case ID_SAVE: {
+            if (g_bin.empty()) { status(L"nothing loaded"); break; }
+            auto p = pick(true);
+            if (p.empty()) break;
+            status(save_file(p) ? L"wrote " + p : L"save failed");
+            break;
+        }
+        case ID_LIST: do_list(); break;
+        case ID_FIND: do_find(); break;
+        case ID_REPL: do_patch(false); break;
+        case ID_ZERO: do_patch(true); break;
+        case ID_XOR: do_xor(); break;
+        case ID_BOX:
+            if (HIWORD(w) == LBN_DBLCLK) {
+                int i = (int)SendMessageW(g_box, LB_GETCURSEL, 0, 0);
+                if (i >= 0) {
+                    wchar_t buf[600];
+                    SendMessageW(g_box, LB_GETTEXT, i, (LPARAM)buf);
+                    wchar_t* s = wcsstr(buf, L"  ");
+                    if (s) SetWindowTextW(g_old, s + 2);
+                }
+            }
+            break;
+        }
+        return 0;
+    case WM_DESTROY: PostQuitMessage(0); return 0;
+    }
+    return DefWindowProcW(h, m, w, l);
 }
 
-int main(int argc, char** argv) {
-    if (argc < 3) { usage(); return 1; }
-    std::string cmd = argv[1];
-    auto bin = slurp(argv[2]);
-
-    if (cmd == "list") {
-        int minlen = argc > 3 ? std::atoi(argv[3]) : 4;
-        list_ascii(bin, minlen);
-        return 0;
-    }
-    if (cmd == "find" && argc >= 4) {
-        auto n = bytes_of(argv[3]);
-        auto w = to_utf16le(argv[3]);
-        for (auto o : find_bytes(bin, n)) std::printf("ascii 0x%08zx\n", o);
-        for (auto o : find_bytes(bin, w)) std::printf("utf16 0x%08zx\n", o);
-        return 0;
-    }
-    if ((cmd == "replace" && argc >= 6) || (cmd == "zero" && argc >= 5)) {
-        std::string outp = argv[3];
-        auto oldv = bytes_of(argv[4]);
-        auto nv = (cmd == "replace") ? bytes_of(argv[5]) : std::vector<uint8_t>{};
-        bool z = cmd == "zero";
-        int hits = 0;
-        for (auto o : find_bytes(bin, oldv)) hits += patch_at(bin, o, oldv, nv, z);
-        auto oldw = to_utf16le(argv[4]);
-        auto neww = z ? std::vector<uint8_t>{} : to_utf16le(argv[5]);
-        for (auto o : find_bytes(bin, oldw)) hits += patch_at(bin, o, oldw, neww, z);
-        dump(outp, bin);
-        std::printf("patched %d slot(s) -> %s\n", hits, outp.c_str());
-        return hits ? 0 : 2;
-    }
-    if (cmd == "xorfind" && argc >= 4) {
-        xor_hunt(bin, bytes_of(argv[3]));
-        return 0;
-    }
-    usage();
-    return 1;
+int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
+    WNDCLASSW wc{};
+    wc.lpfnWndProc = Wnd;
+    wc.hInstance = inst;
+    wc.lpszClassName = L"TagtusSoEdit";
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    RegisterClassW(&wc);
+    HWND h = CreateWindowW(L"TagtusSoEdit", L"TAGTUSVR SO STRING EDIT", WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,
+        CW_USEDEFAULT, CW_USEDEFAULT, 696, 520, nullptr, nullptr, inst, nullptr);
+    ShowWindow(h, show);
+    MSG msg;
+    while (GetMessageW(&msg, nullptr, 0, 0)) { TranslateMessage(&msg); DispatchMessageW(&msg); }
+    return 0;
 }
+
+int WINAPI WinMain(HINSTANCE i, HINSTANCE p, LPSTR, int s) { return wWinMain(i, p, nullptr, s); }

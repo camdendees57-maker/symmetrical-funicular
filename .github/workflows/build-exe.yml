@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - "tools/so_string_edit.cpp"
+      - "tools/**"
       - ".github/workflows/build-exe.yml"
 jobs:
   windows-exe:
@@ -14,13 +14,13 @@ jobs:
       - name: build
         shell: cmd
         run: |
-          where g++ && g++ -O2 -static -std=c++17 -o so_string_edit.exe tools\so_string_edit.cpp
-          if not exist so_string_edit.exe (
+          g++ -O2 -static -std=c++17 -mwindows -o so_string_edit.exe tools\so_string_edit.cpp -lcomdlg32 -lcomctl32 -luser32 -lgdi32
+          if errorlevel 1 (
             call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-            cl /O2 /EHsc /Fe:so_string_edit.exe tools\so_string_edit.cpp
+            cl /O2 /EHsc /DUNICODE /D_UNICODE tools\so_string_edit.cpp /Fe:so_string_edit.exe /link /SUBSYSTEM:WINDOWS comdlg32.lib comctl32.lib user32.lib gdi32.lib
           )
           dir so_string_edit.exe
       - uses: actions/upload-artifact@v4
         with:
-          name: so_string_edit-win64
+          name: so_string_edit-gui-win64
           path: so_string_edit.exe
