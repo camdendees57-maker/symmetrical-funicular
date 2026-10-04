@@ -5,6 +5,7 @@
 #include <EGL/egl.h>
 #include <android/log.h>
 #include <dlfcn.h>
+#include <jni.h>
 #include <pthread.h>
 #include <unistd.h>
 
