@@ -1,14 +1,11 @@
 # symmetrical-funicular
 
-Float Company / Quest Unity 6 holdable board menu.
+Quest Tools menu `.so`. Dear ImGui, arm64, OpenGL ES 3.
 
-Unity: 6000.0.66f2 (b20bc5da3050)
-Backend: IL2CPP ARM64, metadata v31, OculusXRPlugin, Vulkan.
+Actions builds `libaxiommenu.so`. In Quest Tools, pick that file as the menu `.so` and patch.
 
-Not a flat screen imgui overlay. Board parents to the off-hand like ii's stupid menu. Poke buttons with the other controller.
+Loaded libs run a constructor, hook `eglSwapBuffers`, and draw the Axiom window.
 
-Grip on off-hand = spawn / hold the board.
-Trigger poke = click.
-Stick left/right = page.
+OpenGL ES games only. Vulkan titles load the lib and log `eglSwapBuffers not found`. They will not draw this window.
 
-Build: Actions → build-arm64. Artifact libholdmenu.so.
+Log tag: `AxiomMenu`.
